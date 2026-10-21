@@ -17,7 +17,9 @@
     "simulate": "node scripts/simulate-webhook.mjs",
     "setup:verify-token": "node scripts/setup-verify-token.mjs",
     "tunnel": "node -e \"require('dotenv').config({quiet:true});const d=process.env.NGROK_DOMAIN;if(!d){console.error('Set NGROK_DOMAIN in .env');process.exit(1)}require('child_process').spawn('ngrok',['http','--url='+d,process.env.PORT||'3000'],{stdio:'inherit'})\"",
-    "store-secret": "node scripts/store-secret.mjs"
+    "store-secret": "node scripts/store-secret.mjs",
+    "bot": "node src/bot.js",
+    "telegram:setup": "node scripts/telegram-setup.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",

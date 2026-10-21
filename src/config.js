@@ -17,4 +17,9 @@ export const config = {
     graphVersion: process.env.WHATSAPP_GRAPH_VERSION || 'v25.0',
   },
   seenFile: process.env.SEEN_FILE || 'data/seen.json',
+  telegram: {
+    allowedUserId: (process.env.TELEGRAM_ALLOWED_USER_ID || '').trim(),
+    seenFile: process.env.TELEGRAM_SEEN_FILE || 'data/telegram-seen.json',
+    apiBase: process.env.TELEGRAM_API_BASE || 'https://api.telegram.org', // overridable for local end-to-end tests
+  },
 };

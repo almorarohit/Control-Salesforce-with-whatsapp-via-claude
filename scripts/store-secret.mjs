@@ -8,8 +8,9 @@ import { config } from '../src/config.js';
 import { createKeychain } from '../src/keychain.js';
 import { WA_ACCESS_TOKEN, WA_APP_SECRET } from '../src/whatsapp/secrets.js';
 import { SECRET_ACCOUNT } from '../src/sfAuth.js';
+import { TG_BOT_TOKEN } from '../src/telegram/secrets.js';
 
-const ACCOUNTS = [WA_ACCESS_TOKEN, WA_APP_SECRET, SECRET_ACCOUNT];
+const ACCOUNTS = [TG_BOT_TOKEN, WA_ACCESS_TOKEN, WA_APP_SECRET, SECRET_ACCOUNT];
 const account = process.argv[2];
 if (!ACCOUNTS.includes(account)) {
   console.error(`Usage: npm run store-secret -- <${ACCOUNTS.join('|')}>`);

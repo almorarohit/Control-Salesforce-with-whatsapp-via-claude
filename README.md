@@ -1,6 +1,6 @@
 # SF WhatsApp Copilot
 
-Control a personal Salesforce Developer Edition org from WhatsApp chat, using a local AI model and Salesforce's hosted MCP servers.
+Control a personal Salesforce Developer Edition org from a chat app, using a local AI model and Salesforce's hosted MCP servers. The chat channel is **Telegram** (WhatsApp is built but blocked by Meta's business-verification requirement; see Phase 4).
 
 ## Constraints
 
@@ -44,7 +44,8 @@ The backend and Claude Code are separate MCP clients with separate OAuth tokens.
 | 2 | Ollama + ~4B model, tool calling tested against stubbed tools | Done |
 | 3 | Node backend MCP client with its own OAuth (PKCE), tokens in Keychain | Done |
 | 4 | Meta app, test number, webhook with signature check, sender allowlist, dedupe, tunnel | Built; **blocked by Meta** (see below) |
-| 5 | "Reply YES" before writes, monthly reply guard, redacted logs | — |
+| 4b | Telegram bot (long polling, no tunnel), owner-only allowlist, typing indicator, HTML replies | Built and tested against a fake Telegram server; needs your bot token |
+| 5 | Read-only guards (done: write requests refused up front, SOQL retry with real field names, redacted logs). "Reply YES" before writes only if writes are ever enabled | Partly done |
 | 6 | Optional: Claude Code headless as the backend's brain | — |
 
 ## Setup
@@ -97,7 +98,44 @@ npm run ask -- "show me 3 account names"
 
 Guards in [src/agent.js](src/agent.js): only the six SObject Reads tools are offered; one tool call per message; arguments are checked against each tool's schema; `soqlQuery` must be a single `SELECT` and gets `LIMIT 20` when it has none; plain `find` text is wrapped as SOSL `FIND {…}`; misspelled tool names (`soql_query`) map only onto allowed tools.
 
-Known limit: the 4B model sometimes writes SOQL with wrong field names (e.g. `Stage` for `StageName`) and then misreports the error.
+Also: `getObjectSchema` output is reduced to field names, types and picklist values (raw output is ~13 KB of mostly child relationships); aggregate queries (`COUNT()`, `SUM()`… without `GROUP BY`) get no added `LIMIT`; a SOQL query that fails on a bad field or syntax gets **one** retry with the object's real field names; messages starting with a change verb (create, update, delete, …) get the read-only reply without running the model.
+
+Known limit: the 4B model can still pick the wrong field or misread a result; answers take 10–60 seconds.
+
+## Telegram bot (Phase 4b)
+
+```
+Telegram ◄── long polling (getUpdates, outbound HTTPS only) ── npm run bot ──► agent ──► Salesforce MCP
+```
+
+No public URL, tunnel or webhook: the Mac only connects out to `api.telegram.org`. Telegram keeps undelivered messages for up to 24 hours.
+
+- **Owner only:** messages are processed only from `TELEGRAM_ALLOWED_USER_ID` (numeric, never changes), in a private chat. Everyone else is ignored without a reply.
+- Same intake as WhatsApp ([src/inbox.js](src/inbox.js)): dedupe (`data/telegram-seen.json`), messages older than 5 minutes skipped, one at a time.
+- `/start` and `/help` answer instantly; requests to create/change/delete are refused without running the model; everything else goes through the read-only agent while Telegram shows "typing…".
+- Replies use Telegram HTML (bold/italic/code; everything else escaped), falling back to plain text.
+- Cost: free. No business, verification, payment method or app review.
+
+### One-time setup
+
+1. In Telegram, message **@BotFather** → `/newbot` → pick a name and a username ending in `bot`. Copy the token it gives you.
+2. Store the token from the clipboard (prints only its length):
+   ```bash
+   npm run store-secret -- tg-bot-token
+   ```
+3. Link your account: run this, then open the printed `t.me/…` link on your phone and tap **Start**:
+   ```bash
+   npm run telegram:setup
+   ```
+   It saves your numeric user ID to `.env` and confirms in the chat.
+4. Start the bot (Ollama must be running):
+   ```bash
+   npm run bot
+   ```
+
+### Keep it running (optional)
+
+`scripts/launchd.sh install` starts Ollama and the bot at login and restarts them if they crash (`status`, `logs`, `uninstall` too). Nothing runs while the Mac sleeps.
 
 ## WhatsApp webhook (Phase 4) — paused
 

@@ -2,7 +2,7 @@ import { config } from './config.js';
 import { createKeychain } from './keychain.js';
 import { SalesforceOAuthProvider, SECRET_ACCOUNT } from './sfAuth.js';
 import { connectMcp, resultText } from './mcpClient.js';
-import { allowedTools, runAgent } from './agent.js';
+import { allowedTools, runAgent, isWriteRequest, READ_ONLY_REPLY } from './agent.js';
 import { createOllamaChat } from './ollama.js';
 
 export const keychain = createKeychain(config.keychainService);
@@ -27,7 +27,8 @@ export async function withSalesforce(fn) {
 }
 
 // One question in, one read-only answer out (fresh MCP session per question).
-export function answer(prompt) {
+export async function answer(prompt) {
+  if (isWriteRequest(prompt)) return { reply: READ_ONLY_REPLY };
   return withSalesforce(async (client) => {
     const { tools } = await client.listTools();
     return runAgent({
