@@ -10,4 +10,11 @@ export const config = {
   ollamaHost: process.env.OLLAMA_HOST || 'http://127.0.0.1:11434',
   ollamaModel: process.env.OLLAMA_MODEL || 'qwen3.5:4b',
   keychainService: 'sf-whatsapp-copilot',
+  port: Number(process.env.PORT || 3000),
+  whatsapp: {
+    phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || '',
+    allowedSender: process.env.WHATSAPP_ALLOWED_SENDER || '',
+    graphVersion: process.env.WHATSAPP_GRAPH_VERSION || 'v25.0',
+  },
+  seenFile: process.env.SEEN_FILE || 'data/seen.json',
 };

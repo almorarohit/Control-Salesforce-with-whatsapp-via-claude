@@ -3,23 +3,9 @@
 import { execFile } from 'node:child_process';
 import { auth } from '@modelcontextprotocol/sdk/client/auth.js';
 import { config } from './config.js';
-import { createKeychain } from './keychain.js';
-import { SalesforceOAuthProvider, SECRET_ACCOUNT, startCallbackServer, revokeStoredToken } from './sfAuth.js';
-import { connectMcp, resultText } from './mcpClient.js';
-import { allowedTools, runAgent } from './agent.js';
-import { createOllamaChat } from './ollama.js';
-
-const keychain = createKeychain(config.keychainService);
-
-async function makeProvider(onRedirect) {
-  return new SalesforceOAuthProvider({
-    clientId: config.clientId,
-    clientSecret: await keychain.get(SECRET_ACCOUNT),
-    callbackPort: config.callbackPort,
-    store: keychain,
-    onRedirect,
-  });
-}
+import { startCallbackServer, revokeStoredToken } from './sfAuth.js';
+import { allowedTools } from './agent.js';
+import { keychain, makeProvider, withSalesforce, answer } from './assistant.js';
 
 async function login() {
   let provider;
@@ -40,15 +26,6 @@ async function login() {
   }
 }
 
-async function withSalesforce(fn) {
-  const client = await connectMcp({ serverUrl: config.mcpUrl, authProvider: await makeProvider() });
-  try {
-    return await fn(client);
-  } finally {
-    await client.close();
-  }
-}
-
 const commands = {
   login,
 
@@ -63,20 +40,13 @@ const commands = {
       for (const t of tools) console.log(`${allowed.has(t.name) ? '✔' : '✘'} ${t.name}  ${JSON.stringify(t.inputSchema?.properties || {})}`);
     }),
 
-  ask: (...words) =>
-    withSalesforce(async (client) => {
-      const prompt = words.join(' ').trim();
-      if (!prompt) throw new Error('Usage: npm run ask -- "your question"');
-      const { tools } = await client.listTools();
-      const result = await runAgent({
-        prompt,
-        tools: allowedTools(tools),
-        chat: createOllamaChat({ host: config.ollamaHost, model: config.ollamaModel }),
-        callTool: async (name, args) => resultText(await client.callTool({ name, arguments: args })),
-      });
-      if (result.toolCall) console.error(`[tool] ${result.toolCall.name} ${JSON.stringify(result.toolCall.args)}${result.error ? ` — blocked: ${result.error}` : ''}`);
-      console.log(result.reply);
-    }),
+  async ask(...words) {
+    const prompt = words.join(' ').trim();
+    if (!prompt) throw new Error('Usage: npm run ask -- "your question"');
+    const result = await answer(prompt);
+    if (result.toolCall) console.error(`[tool] ${result.toolCall.name} ${JSON.stringify(result.toolCall.args)}${result.error ? ` — blocked: ${result.error}` : ''}`);
+    console.log(result.reply);
+  },
 };
 
 const [cmd, ...args] = process.argv.slice(2);

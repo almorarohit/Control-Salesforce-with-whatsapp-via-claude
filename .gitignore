@@ -22,6 +22,7 @@ dist/
 coverage/
 
 # --- Logs and runtime data ---
+data/
 logs/
 *.log
 
