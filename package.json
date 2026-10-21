@@ -1,0 +1,21 @@
+{
+  "name": "sf-whatsapp-copilot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "login": "node src/cli.js login",
+    "logout": "node src/cli.js logout",
+    "tools": "node src/cli.js tools",
+    "ask": "node src/cli.js ask",
+    "test": "node --test test/*.test.js",
+    "test:ollama": "node scripts/ollama-tool-test.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "dotenv": "18.0.8"
+  }
+}

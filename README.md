@@ -42,7 +42,7 @@ The backend and Claude Code are separate MCP clients with separate OAuth tokens.
 | 0 | Salesforce SObject Reads MCP + External Client App, Claude Code connected | Done |
 | 1 | Project skeleton: Git, `.gitignore`, `.env.example`, README | Done |
 | 2 | Ollama + ~4B model, tool calling tested against stubbed tools | Done |
-| 3 | Node backend MCP client with its own OAuth (PKCE), tokens in Keychain | — |
+| 3 | Node backend MCP client with its own OAuth (PKCE), tokens in Keychain | Done |
 | 4 | Meta app, test number, webhook with signature check, sender allowlist, dedupe, tunnel | — |
 | 5 | "Reply YES" before writes, monthly reply guard, redacted logs | — |
 | 6 | Optional: Claude Code headless as the backend's brain | — |
@@ -68,6 +68,36 @@ node scripts/ollama-tool-test.mjs qwen3.5:4b
 ```
 
 The test runs offline against stubs named after the SObject Reads tools. It checks tool choice, validates arguments, and checks that write/delete requests are declined.
+
+## Salesforce backend client (Phase 3)
+
+The backend is its own MCP client with its own tokens. It reuses the **Claude Code MCP** External Client App and its callback `http://localhost:38000/callback` (only bound during `npm run login`, so it doesn't clash with Claude Code unless both log in at once).
+
+One-time setup:
+
+1. `npm install`
+2. Put the app's Consumer Key in `.env` as `SF_CLIENT_ID`.
+3. Store the Consumer Secret in the Keychain (hidden prompt, asked twice):
+   ```bash
+   security add-generic-password -s sf-whatsapp-copilot -a sf-client-secret -w
+   ```
+4. `npm run login` opens Salesforce in the browser; the refresh token is saved to the Keychain (`sf-whatsapp-copilot` / `sf-refresh-token`). Access tokens stay in memory.
+
+Use:
+
+```bash
+npm run tools
+```
+
+```bash
+npm run ask -- "show me 3 account names"
+```
+
+`npm run logout` revokes the token at Salesforce and deletes it from the Keychain. `npm test` runs offline (fake MCP server, throwaway Keychain item).
+
+Guards in [src/agent.js](src/agent.js): only the six SObject Reads tools are offered; one tool call per message; arguments are checked against each tool's schema; `soqlQuery` must be a single `SELECT` and gets `LIMIT 20` when it has none; plain `find` text is wrapped as SOSL `FIND {…}`; misspelled tool names (`soql_query`) map only onto allowed tools.
+
+Known limit: the 4B model sometimes writes SOQL with wrong field names (e.g. `Stage` for `StageName`) and then misreports the error.
 
 ## Cost guardrails
 
