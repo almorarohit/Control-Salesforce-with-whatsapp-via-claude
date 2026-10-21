@@ -1,0 +1,35 @@
+# --- Secrets: never commit ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.crt
+secrets/
+tokens/
+*token*.json
+*credentials*.json
+
+# Claude Code / MCP config can hold OAuth client IDs or tokens
+.mcp.json
+.claude/settings.local.json
+
+# --- Node ---
+node_modules/
+npm-debug.log*
+dist/
+coverage/
+
+# --- Logs and runtime data ---
+logs/
+*.log
+
+# --- Tunnels ---
+.ngrok/
+.cloudflared/
+
+# --- OS / editor ---
+.DS_Store
+.vscode/
+.idea/
