@@ -41,7 +41,7 @@ The backend and Claude Code are separate MCP clients with separate OAuth tokens.
 |---|---|---|
 | 0 | Salesforce SObject Reads MCP + External Client App, Claude Code connected | Done |
 | 1 | Project skeleton: Git, `.gitignore`, `.env.example`, README | Done |
-| 2 | Ollama + ~4B model, tool calling tested against stubbed tools | — |
+| 2 | Ollama + ~4B model, tool calling tested against stubbed tools | Done |
 | 3 | Node backend MCP client with its own OAuth (PKCE), tokens in Keychain | — |
 | 4 | Meta app, test number, webhook with signature check, sender allowlist, dedupe, tunnel | — |
 | 5 | "Reply YES" before writes, monthly reply guard, redacted logs | — |
@@ -54,6 +54,20 @@ The backend and Claude Code are separate MCP clients with separate OAuth tokens.
    cp .env.example .env
    ```
 2. Claude Code's Salesforce connection (`salesforce-reads`) is configured per user with `claude mcp add`, not in this repo.
+
+## Local AI (Phase 2)
+
+Ollama is installed from the `ollama-app` Homebrew cask (the `ollama` formula builds from source on macOS 14). The model is `qwen3.5:4b` (~4 GB on disk, ~5.6 GB in memory at a 4K context), run with thinking off.
+
+```bash
+OLLAMA_HOST=127.0.0.1:11434 ollama serve
+```
+
+```bash
+node scripts/ollama-tool-test.mjs qwen3.5:4b
+```
+
+The test runs offline against stubs named after the SObject Reads tools. It checks tool choice, validates arguments, and checks that write/delete requests are declined.
 
 ## Cost guardrails
 
