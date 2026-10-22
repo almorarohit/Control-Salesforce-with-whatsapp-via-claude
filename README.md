@@ -96,9 +96,9 @@ npm run ask -- "show me 3 account names"
 
 `npm run logout` revokes the token at Salesforce and deletes it from the Keychain. `npm test` runs offline (fake MCP server, throwaway Keychain item).
 
-Guards in [src/agent.js](src/agent.js): only the six SObject Reads tools are offered; one tool call per message; arguments are checked against each tool's schema; `soqlQuery` must be a single `SELECT` and gets `LIMIT 20` when it has none; plain `find` text is wrapped as SOSL `FIND {…}`; misspelled tool names (`soql_query`) map only onto allowed tools.
+Guards in [src/agent.js](src/agent.js): only the six SObject Reads tools are offered; up to two tool calls per message (for two-part questions; extras are dropped); arguments are checked against each tool's schema; `soqlQuery` must be a single `SELECT` and gets `LIMIT 20` when it has none; plain `find` text is wrapped as SOSL `FIND {…}`; misspelled tool names (`soql_query`) map only onto allowed tools.
 
-Also: `getObjectSchema` output is reduced to field names, types and picklist values (raw output is ~13 KB of mostly child relationships); aggregate queries (`COUNT()`, `SUM()`… without `GROUP BY`) get no added `LIMIT`; a SOQL query that fails on a bad field or syntax gets **one** retry with the object's real field names; messages starting with a change verb (create, update, delete, …) get the read-only reply without running the model.
+Also: `getObjectSchema` output is reduced to field names, types and picklist values (raw output is ~13 KB of mostly child relationships); aggregate queries (`COUNT()`, `SUM()`… without `GROUP BY`) get no added `LIMIT`; a SOQL query that fails on a bad field, object or syntax gets **one** retry with a hint from the org (the real fields, or the right object name, e.g. `ConnectedApp` → `ConnectedApplication`); if everything fails, the reply states Salesforce's error instead of "no answer". Setup objects `ConnectedApplication`, `ExternalClientApplication` and `ExtlClntAppOauthSettings` are queryable even though the schema index lists only 31 CRM objects (classic connected apps' OAuth scopes/callbacks are metadata and not readable); messages starting with a change verb (create, update, delete, …) get the read-only reply without running the model.
 
 Known limit: the 4B model can still pick the wrong field or misread a result; answers take 10–60 seconds.
 

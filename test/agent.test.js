@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { allowedTools, guardSoql, validateArgs, runAgent, toSosl, resolveTool, compactSchema, soqlObject, isWriteRequest, READ_ONLY_REPLY } from '../src/agent.js';
+import { allowedTools, guardSoql, validateArgs, runAgent, toSosl, resolveTool, compactSchema, soqlObject, isWriteRequest, READ_ONLY_REPLY, errorSummary, suggestObject } from '../src/agent.js';
 
 const soqlTool = { name: 'soqlQuery', inputSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } };
 const schemaTool = { name: 'getObjectSchema', inputSchema: { type: 'object', properties: { objectName: { type: 'string' } }, required: ['objectName'] } };
@@ -155,4 +155,121 @@ test('write requests get the read-only reply without the model or Salesforce', a
     assert.deepEqual(await runAgent({ prompt: p, tools: [], chat: assert.fail, callTool: assert.fail }), { reply: READ_ONLY_REPLY });
   }
   for (const p of ['show accounts created this week', 'which opportunities close this month?', 'what changed recently?']) assert.equal(isWriteRequest(p), false, p);
+});
+
+const BAD_OBJECT = 'Tool error: [{"message":"\\nEnabled__c FROM ConnectedApp WHERE x\\n   ^\\nERROR at Row:1:Column:58\\nsObject type \'ConnectedApp\' is not supported. If you are attempting to use a custom object, be sure to append the \'__c\' after the entity name.","errorCode":"INVALID_TYPE"}]';
+
+test('errorSummary turns Salesforce tool errors into one readable sentence', () => {
+  assert.equal(errorSummary(BAD_OBJECT), "sObject type 'ConnectedApp' is not supported.");
+  assert.equal(errorSummary('Tool error: [{"message":"\\nSELECT Id, Stage FROM Opportunity\\n ^\\nERROR at Row:1:Column:12\\nNo such column \'Stage\' on entity \'Opportunity\'. If you are attempting to use a custom field, be sure…","errorCode":"INVALID_FIELD"}]'), "No such column 'Stage' on entity 'Opportunity'.");
+  assert.equal(errorSummary('Tool error: plain text failure'), 'plain text failure');
+});
+
+test('suggestObject maps wrong object names to real ones', () => {
+  assert.equal(suggestObject('ConnectedApp'), 'ConnectedApplication');
+  assert.equal(suggestObject('ConnectedApp__c'), 'ConnectedApplication');
+  assert.equal(suggestObject('External_Client_App'), 'ExternalClientApplication');
+  assert.equal(suggestObject('accounts', ['Account', 'Contact']), 'Account');
+  assert.equal(suggestObject('opportunity', ['Opportunity']), 'Opportunity');
+  assert.equal(suggestObject('Spaceship', ['Account']), undefined);
+});
+
+const realSoql = { name: 'soqlQuery', inputSchema: { type: 'object', properties: { q: { type: 'string' } } } };
+const describe = { name: 'getObjectSchema', inputSchema: { type: 'object', properties: { objects: { type: 'string' } } } };
+
+test('wrong object name: retry hint names the real object and its fields', async () => {
+  const prompts = [];
+  const replies = [
+    call('soqlQuery', { q: 'SELECT Id, Enabled__c FROM ConnectedApp' }),
+    call('soqlQuery', { q: 'SELECT Name, OptionsAllowAdminApprovedUsersOnly FROM ConnectedApplication' }),
+    { content: 'Dataloader Bulk: admin approval not required' },
+  ];
+  const r = await runAgent({
+    prompt: 'list connected apps',
+    tools: [realSoql, describe],
+    chat: async (messages) => (prompts.push(messages.at(-1)), replies.shift()),
+    callTool: async (name, args) => {
+      if (name === 'getObjectSchema' && !args.objects) return JSON.stringify({ details: [], index: { objects: [{ name: 'Account' }] } });
+      if (name === 'getObjectSchema') return JSON.stringify({ details: [{ name: args.objects, fields: [{ name: 'OptionsAllowAdminApprovedUsersOnly', type: 'boolean' }] }] });
+      return /FROM ConnectedApp\b(?!lication)/.test(args.q) ? BAD_OBJECT : '{"totalSize":1,"records":[{"Name":"Dataloader Bulk","OptionsAllowAdminApprovedUsersOnly":false}]}';
+    },
+  });
+  assert.equal(r.reply, 'Dataloader Bulk: admin approval not required');
+  assert.match(prompts[1].content, /There is no object "ConnectedApp"; use ConnectedApplication/);
+  assert.match(prompts[1].content, /OptionsAllowAdminApprovedUsersOnly \(boolean\)/);
+});
+
+test('unknown object: hint lists queryable objects including setup objects', async () => {
+  const prompts = [];
+  const replies = [call('soqlQuery', { q: 'SELECT Id FROM Spaceship' }), { content: '' }, { content: 'no such thing' }];
+  await runAgent({
+    prompt: 'spaceships?',
+    tools: [realSoql, describe],
+    chat: async (messages) => (prompts.push(messages.at(-1).content), replies.shift()),
+    callTool: async (name, args) => (name === 'getObjectSchema' ? JSON.stringify({ details: [], index: { objects: [{ name: 'Account' }] } }) : BAD_OBJECT.replace(/ConnectedApp/g, 'Spaceship')),
+  });
+  assert.match(prompts[1], /Objects you can query: Account, ConnectedApplication, ExternalClientApplication/);
+});
+
+test('empty final answer after a failed query reports the Salesforce error, not "no answer"', async () => {
+  const replies = [call('soqlQuery', { q: 'SELECT Id FROM ConnectedApp' }), call('soqlQuery', { q: 'SELECT Id FROM ConnectedApp__c' }), { content: '  ' }];
+  const r = await runAgent({
+    prompt: 'connected apps?',
+    tools: [realSoql],
+    chat: async () => replies.shift(),
+    callTool: async () => BAD_OBJECT,
+  });
+  assert.equal(r.reply, "I couldn't get that from Salesforce: sObject type 'ConnectedApp' is not supported.");
+  assert.equal(r.error, "sObject type 'ConnectedApp' is not supported.");
+});
+
+test('empty final answer after a successful query keeps the generic fallback', async () => {
+  const replies = [call('soqlQuery', { q: 'SELECT Id FROM Account' }), { content: '' }];
+  const r = await runAgent({ prompt: 'x', tools: [realSoql], chat: async () => replies.shift(), callTool: async () => '{"records":[]}' });
+  assert.equal(r.reply, 'Sorry, I had no answer for that.');
+});
+
+const multi = (...cs) => ({ role: 'assistant', content: '', tool_calls: cs.map(([name, args]) => ({ function: { name, arguments: args } })) });
+
+test('two tool calls for a two-part question both run; a third is dropped', async () => {
+  const ran = [];
+  const seen = [];
+  const replies = [
+    multi(['soqlQuery', { q: 'SELECT Name FROM ConnectedApplication' }], ['soqlQuery', { q: 'SELECT MasterLabel FROM ExternalClientApplication' }], ['soqlQuery', { q: 'SELECT Id FROM Account' }]),
+    { content: 'both answered' },
+  ];
+  const r = await runAgent({
+    prompt: 'connected apps and external client apps',
+    tools: [realSoql],
+    chat: async (messages) => (seen.push(messages.slice()), replies.shift()),
+    callTool: async (name, args) => (ran.push(args.q), '{"records":[]}'),
+  });
+  assert.equal(r.reply, 'both answered');
+  assert.deepEqual(ran, ['SELECT Name FROM ConnectedApplication LIMIT 20', 'SELECT MasterLabel FROM ExternalClientApplication LIMIT 20']);
+  assert.equal(r.toolCalls.length, 2);
+  const last = seen[1];
+  assert.equal(last.filter((m) => m.role === 'tool').length, 2);
+  assert.equal(last.find((m) => m.role === 'assistant').tool_calls.length, 2);
+});
+
+test('one bad call among two blocks the turn before anything runs', async () => {
+  const r = await runAgent({
+    prompt: 'x',
+    tools: [realSoql],
+    chat: async () => multi(['soqlQuery', { q: 'SELECT Id FROM Account' }], ['deleteRecord', { id: '001' }]),
+    callTool: assert.fail,
+  });
+  assert.match(r.error, /Tool not allowed: deleteRecord/);
+});
+
+test('with two calls, one failing is not reported as a total failure', async () => {
+  const replies = [multi(['soqlQuery', { q: 'SELECT Id FROM Account' }], ['soqlQuery', { q: 'SELECT Id FROM Contact' }]), { content: '' }];
+  const r = await runAgent({
+    prompt: 'x',
+    tools: [realSoql],
+    chat: async () => replies.shift(),
+    callTool: async (n, a) => (/Contact/.test(a.q) ? 'Tool error: [{"message":"denied","errorCode":"INSUFFICIENT_ACCESS"}]' : '{"records":[]}'),
+  });
+  assert.equal(r.reply, 'Sorry, I had no answer for that.');
+  assert.equal(r.error, undefined);
 });
