@@ -51,6 +51,8 @@ case "${1:-}" in
     plist "$BOT_LABEL" "$PROJECT_DIR" "$NODE_BIN" "$PROJECT_DIR/src/bot.js" > "$AGENTS/$BOT_LABEL.plist"
     for l in "$OLLAMA_LABEL" "$BOT_LABEL"; do
       launchctl bootout "gui/$UID_NUM/$l" 2>/dev/null || true
+      # bootout is asynchronous; bootstrapping before it finishes fails with "5: Input/output error"
+      for _ in {1..20}; do launchctl print "gui/$UID_NUM/$l" >/dev/null 2>&1 || break; sleep 0.5; done
       launchctl bootstrap "gui/$UID_NUM" "$AGENTS/$l.plist"
     done
     echo "Installed and started. Logs: $LOGS (scripts/launchd.sh logs)"
